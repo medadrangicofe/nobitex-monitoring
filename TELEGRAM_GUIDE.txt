@@ -1,0 +1,10 @@
+
+Telegram Bot Integration Guide
+-------------------------------
+
+1. Create a Telegram bot via @BotFather
+2. Get Chat ID (private or group)
+3. Set environment variables (.env file or system env)
+4. Run: npm install && npm run start
+
+Monitor alerts (warn/critical) will be sent to Telegram.
