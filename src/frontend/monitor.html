@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Nobitex Monitor Panel</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+body { font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+#monitorTable { width: 100%; border-collapse: collapse; }
+#monitorTable th, #monitorTable td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+#monitorTable th { background: #333; color: #fff; }
+.up { color: green; }
+.down { color: red; }
+.stable { color: gray; }
+</style>
+</head>
+<body>
+<h2 style="text-align:center;">Nobitex Monitor Panel</h2>
+<table id="monitorTable">
+  <thead>
+    <tr>
+      <th>Symbol</th>
+      <th>Price</th>
+      <th>Trend</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<audio id="monitorAlertSound" src="/assets/alert.wav" preload="auto"></audio>
+
+<script>
+const socket = io('/');
+const tbody = document.querySelector('#monitorTable tbody');
+const alertSound = document.getElementById('monitorAlertSound');
+let lastData = {};
+
+socket.on('monitor:data', (data) => {
+  tbody.innerHTML = '';
+
+  Object.keys(data).forEach(symbol => {
+    const row = document.createElement('tr');
+    const price = data[symbol].price;
+    const trend = data[symbol].trend;
+
+    row.innerHTML = `<td>${symbol}</td><td>${price}</td><td class="${trend}">${trend}</td>`;
+    tbody.appendChild(row);
+
+    // پخش صدا در صورت تغییر روند
+    if (trend === 'up' || trend === 'down') {
+      if (!lastData[symbol] || lastData[symbol].trend !== trend) {
+        try { alertSound.play(); } catch(e) { console.warn(e); }
+      }
+    }
+  });
+
+  lastData = data;
+});
+</script>
+</body>
+</html>
