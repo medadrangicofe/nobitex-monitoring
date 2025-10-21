@@ -1,18 +1,35 @@
-/**
- * مدیریت سابسکرایب فرانت‌اند
- * io = Socket.io instance
- */
-export function subscriptionManager(io) {
-  io.on('connection', (socket) => {
-    console.log('Frontend subscribed:', socket.id);
+// subscriptionManager.js - unified with fetchNobitexData
+import { fetchNobitexData } from "../services/dataFetcher.js";
+import logger from "../utils/logger.js";
 
-    // دریافت درخواست داده‌ها از فرانت‌اند
-    socket.on('request:data', (payload) => {
-      console.log('Data requested by frontend:', payload);
-    });
+export default class SubscriptionManager {
+  constructor() {
+    this.subscriptions = new Map();
+  }
 
-    socket.on('disconnect', () => {
-      console.log('Frontend disconnected:', socket.id);
-    });
-  });
+  subscribe(symbol, callback) {
+    if (typeof callback !== "function") {
+      throw new Error("Callback must be a function");
+    }
+    this.subscriptions.set(symbol, callback);
+    logger.info(`Subscribed to ${symbol}`);
+  }
+
+  unsubscribe(symbol) {
+    this.subscriptions.delete(symbol);
+    logger.info(`Unsubscribed from ${symbol}`);
+  }
+
+  async updateAll() {
+    for (const [symbol, callback] of this.subscriptions.entries()) {
+      try {
+        const endpoint = `/market/stats?symbol=${symbol}`;
+        const data = await fetchNobitexData(endpoint);
+        const stats = data?.stats?.[symbol];
+        if (stats) callback(stats);
+      } catch (err) {
+        logger.error(`SubscriptionManager.updateAll error for ${symbol}: ${err.message}`);
+      }
+    }
+  }
 }

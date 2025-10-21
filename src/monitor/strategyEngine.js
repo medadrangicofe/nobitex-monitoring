@@ -1,24 +1,44 @@
-/**
- * تحلیل روندها و تولید سیگنال
- * symbolData = { symbol: { price, trend, history } }
- */
-export function analyzeTrends(symbolData) {
-  const analysis = {};
+// strategyEngine.js - unified with fetchNobitexData
+import { fetchNobitexData } from "../services/dataFetcher.js";
+import logger from "../utils/logger.js";
 
-  Object.keys(symbolData).forEach(symbol => {
-    const data = symbolData[symbol];
-    const trend = data.trend;
-    const history = data.history || [];
+export default class StrategyEngine {
+  constructor() {
+    this.strategies = [];
+  }
 
-    const upCount = history.filter(t => t.trend === 'up').length;
-    const downCount = history.filter(t => t.trend === 'down').length;
+  async loadMarketData(symbol = "BTCIRT") {
+    try {
+      const endpoint = `/market/stats?symbol=${symbol}`;
+      const data = await fetchNobitexData(endpoint);
+      return data.stats?.[symbol] || null;
+    } catch (err) {
+      logger.error(`StrategyEngine.loadMarketData error: ${err.message}`);
+      return null;
+    }
+  }
 
-    let signal = 'neutral';
-    if (upCount >= 3) signal = 'buy';
-    else if (downCount >= 3) signal = 'sell';
+  registerStrategy(name, handler) {
+    if (typeof handler !== "function") {
+      throw new Error("Strategy handler must be a function");
+    }
+    this.strategies.push({ name, handler });
+  }
 
-    analysis[symbol] = { trend, signal, price: data.price };
-  });
+  async execute(symbol = "BTCIRT") {
+    const marketData = await this.loadMarketData(symbol);
+    if (!marketData) {
+      logger.warn(`No data returned for ${symbol}`);
+      return;
+    }
 
-  return analysis;
+    for (const { name, handler } of this.strategies) {
+      try {
+        const result = await handler(marketData);
+        logger.info(`[Strategy:${name}] ${symbol} => ${JSON.stringify(result)}`);
+      } catch (err) {
+        logger.error(`[Strategy:${name}] Error: ${err.message}`);
+      }
+    }
+  }
 }
