@@ -1,4 +1,4 @@
-// src/monitor/monitorEngine.js (اصلاح‌شده)
+// src/monitor/monitorEngine.js (بازنویسی کامل و سازگار با fetchNobitexData جدید)
 import { fetchNobitexData } from '../services/dataFetcher.js';
 import { sendMonitorAlertTelegram } from '../services/monitorTelegram.js';
 import logger from '../utils/logger.js';
@@ -17,31 +17,32 @@ function getStats() {
 }
 
 export function monitorEngineStart(io) {
-  // نمونه پیاده‌سازی: هر چند ثانیه آمار بازار را می‌گیریم و پردازش می‌کنیم
   setInterval(async () => {
     try {
-      // فراخوانی endpoint مشخص (اجتناب از undefined)
+      logger.info('🔍 Fetching Nobitex market stats...');
+
+      // ✅ فراخوانی endpoint با fetchNobitexData (دارای timeout و retry داخلی)
       const res = await fetchNobitexData('/market/stats');
-      if (res.error) {
-        logger.error('❌ دریافت آمار نوبیتکس ناموفق بود', res);
-        // انتشار لاگ به فرانت‌اند با خطا (اختیاری)
+
+      if (!res || res.error) {
+        logger.error('❌ دریافت آمار نوبیتکس ناموفق بود:', res?.error || res);
         io.emit('monitor:error', { message: 'Failed to fetch Nobitex data', details: res });
         return;
       }
 
-      const payload = res.data;
+      const payload = res.data || res;
       const stats = payload?.stats || payload?.data?.stats || null;
+
       if (!stats) {
-        logger.error('⚠️ ساختار پاسخ نوبیتکس غیرمنتظره است', payload);
+        logger.warn('⚠️ ساختار پاسخ نوبیتکس غیرمنتظره است:', payload);
         io.emit('monitor:error', { message: 'Unexpected Nobitex response structure', payload });
         return;
       }
 
-      // نمونه ساده: استخراج قیمت latest (یا مقدار مشابه) و محاسبه روند
+      // 🧮 استخراج داده‌های ساده‌شده
       const simplified = {};
       Object.keys(stats).forEach(key => {
         const item = stats[key] || {};
-        // چند نام ممکن در پاسخ: latest, last, dayClose - سعی می‌کنیم همه را پوشش دهیم
         const price = item.latest || item.last || item.dayClose || item.close || null;
         simplified[key] = {
           price,
@@ -51,30 +52,32 @@ export function monitorEngineStart(io) {
         };
       });
 
-      // مثال پردازش: مقایسه با مقدار قبلی برای تشخیص ترند
+      // 📈 پردازش و تشخیص روند
       Object.keys(simplified).forEach(symbol => {
         const prev = lastSignals[symbol]?.price ?? null;
         const price = simplified[symbol].price;
         let trend = 'neutral';
+
         if (prev !== null && price !== null) {
           if (price > prev) trend = 'up';
           else if (price < prev) trend = 'down';
         }
-        // history tracking
+
         trendHistory[symbol] = trendHistory[symbol] || [];
         trendHistory[symbol].push({ t: Date.now(), price, trend });
         if (trendHistory[symbol].length > 50) trendHistory[symbol].shift();
 
-        // ساده‌سازی سیگنال‌ها
-        const sameTrendCount = trendHistory[symbol].slice(-SPECIAL_SIGNAL_THRESHOLD).filter(x => x.trend === trend).length;
+        const sameTrendCount = trendHistory[symbol]
+          .slice(-SPECIAL_SIGNAL_THRESHOLD)
+          .filter(x => x.trend === trend).length;
+
         if (sameTrendCount >= SPECIAL_SIGNAL_THRESHOLD && price !== null) {
-          // ارسال هشدار تلگرام (با جلوگیری از اسپم)
           const lastAlertAt = lastSignals[symbol]?.lastAlertAt || 0;
           if (Date.now() - lastAlertAt > SPECIAL_SIGNAL_INTERVAL) {
             sendMonitorAlertTelegram({
               title: `Special trend for ${symbol}`,
               message: `Trend ${trend} for ${sameTrendCount} consecutive ticks. Price: ${price}`,
-              level: 'critical'
+              level: 'critical',
             });
             lastSignals[symbol] = { ...simplified[symbol], price, trend, lastAlertAt: Date.now() };
           }
@@ -83,8 +86,9 @@ export function monitorEngineStart(io) {
         }
       });
 
-      // ارسال به فرانت‌اند
       io.emit('monitor:data', lastSignals);
+      logger.success('✅ Monitor tick processed successfully.');
+
     } catch (err) {
       logger.error('🔥 monitorEngine exception:', err?.message || err);
       io.emit('monitor:error', { message: 'monitor engine error', details: err?.message || err });
