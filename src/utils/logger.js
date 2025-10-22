@@ -1,5 +1,5 @@
 // Simple logger wrapper used across project
-// Exports default object with info, warn, error methods.
+// Exports default object with info, warn, error, debug, success methods.
 // Timestamp added for clarity.
 
 function ts() {
@@ -11,6 +11,7 @@ const logger = {
   warn: (...args) => console.warn('[WARN]', ts(), ...args),
   error: (...args) => console.error('[ERROR]', ts(), ...args),
   debug: (...args) => console.log('[DEBUG]', ts(), ...args),
+  success: (...args) => console.log('[SUCCESS]', ts(), ...args),
 };
 
 export default logger;
