@@ -1,44 +1,35 @@
-// strategyEngine.js - unified with fetchNobitexData
-import { fetchNobitexData } from "../services/dataFetcher.js";
-import logger from "../utils/logger.js";
+// src/monitor/strategyEngine.js
+// Unified with fetchNobitexData logic
 
-export default class StrategyEngine {
+import { fetchNobitexData } from '../services/dataFetcher.js';
+import { subscriptionManager } from './subscriptionManager.js';
+
+class StrategyEngine {
   constructor() {
     this.strategies = [];
   }
 
-  async loadMarketData(symbol = "BTCIRT") {
+  // Register a new trading strategy
+  registerStrategy(strategyFn) {
+    this.strategies.push(strategyFn);
+  }
+
+  // Evaluate all strategies based on fetched data
+  async evaluate(pair) {
     try {
-      const endpoint = `/market/stats?symbol=${symbol}`;
-      const data = await fetchNobitexData(endpoint);
-      return data.stats?.[symbol] || null;
-    } catch (err) {
-      logger.error(`StrategyEngine.loadMarketData error: ${err.message}`);
-      return null;
-    }
-  }
-
-  registerStrategy(name, handler) {
-    if (typeof handler !== "function") {
-      throw new Error("Strategy handler must be a function");
-    }
-    this.strategies.push({ name, handler });
-  }
-
-  async execute(symbol = "BTCIRT") {
-    const marketData = await this.loadMarketData(symbol);
-    if (!marketData) {
-      logger.warn(`No data returned for ${symbol}`);
-      return;
-    }
-
-    for (const { name, handler } of this.strategies) {
-      try {
-        const result = await handler(marketData);
-        logger.info(`[Strategy:${name}] ${symbol} => ${JSON.stringify(result)}`);
-      } catch (err) {
-        logger.error(`[Strategy:${name}] Error: ${err.message}`);
+      const data = await fetchNobitexData(pair);
+      for (const strategy of this.strategies) {
+        await strategy(data);
       }
+    } catch (err) {
+      console.error(`Strategy evaluation failed for ${pair}:`, err.message);
     }
+  }
+
+  // Connect to the subscription system
+  connectToSubscriptions() {
+    subscriptionManager.subscribe('USDTIRT', (data) => this.evaluate('USDTIRT'));
   }
 }
+
+export const strategyEngine = new StrategyEngine();

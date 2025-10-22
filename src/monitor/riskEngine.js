@@ -1,33 +1,42 @@
-// riskEngine.js - unified with fetchNobitexData
-import { fetchNobitexData } from "../services/dataFetcher.js";
-import logger from "../utils/logger.js";
+// src/monitor/riskEngine.js
+// Uses unified data source from fetchNobitexData
 
-export default class RiskEngine {
-  constructor(threshold = 0.05) {
-    this.threshold = threshold;
+import { fetchNobitexData } from '../services/dataFetcher.js';
+import { subscriptionManager } from './subscriptionManager.js';
+
+class RiskEngine {
+  constructor() {
+    this.thresholds = {
+      maxDrawdown: 0.1, // 10%
+      maxVolatility: 0.05, // 5%
+    };
   }
 
-  async analyze(symbol = "BTCIRT") {
+  setThresholds(newThresholds) {
+    this.thresholds = { ...this.thresholds, ...newThresholds };
+  }
+
+  async assess(pair) {
     try {
-      const endpoint = `/market/orderbook?symbol=${symbol}`;
-      const data = await fetchNobitexData(endpoint);
-      const orderbook = data?.orderbook;
-      if (!orderbook) {
-        logger.warn(`RiskEngine: No orderbook for ${symbol}`);
-        return null;
+      const data = await fetchNobitexData(pair);
+      const { lastTradePrice, changePercent } = data;
+
+      if (Math.abs(changePercent) > this.thresholds.maxVolatility * 100) {
+        console.warn(`[Risk] Volatility high for ${pair}: ${changePercent}%`);
       }
 
-      const bestBid = parseFloat(orderbook.bids?.[0]?.[0] || 0);
-      const bestAsk = parseFloat(orderbook.asks?.[0]?.[0] || 0);
-      if (!bestBid || !bestAsk) return null;
-
-      const spread = (bestAsk - bestBid) / bestAsk;
-      const risky = spread > this.threshold;
-      logger.info(`[RiskEngine] ${symbol} spread=${spread.toFixed(4)} risky=${risky}`);
-      return { symbol, spread, risky };
+      if (lastTradePrice < 0) {
+        console.error(`[Risk] Invalid trade price for ${pair}:`, lastTradePrice);
+      }
     } catch (err) {
-      logger.error(`RiskEngine.analyze error: ${err.message}`);
-      return null;
+      console.error(`Risk assessment failed for ${pair}:`, err.message);
     }
   }
+
+  monitor(pair = 'USDTIRT', interval = 15000) {
+    setInterval(() => this.assess(pair), interval);
+    subscriptionManager.subscribe(pair, (data) => this.assess(pair));
+  }
 }
+
+export const riskEngine = new RiskEngine();
