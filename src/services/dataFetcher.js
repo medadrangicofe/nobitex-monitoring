@@ -1,81 +1,75 @@
-// src/services/dataFetcher.js  (پیشنهادی - جایگزین کامل)
-import fetch from 'node-fetch';
-import logger from '../utils/logger.js';
+// src/services/dataFetcher.js
+// نسخه‌ی بهینه‌شده برای رندر – شامل timeout 15s، retry سه‌مرحله‌ای و delay 5s
 
-const DEFAULT_BASE = 'https://apiv2.nobitex.ir'; // پیش‌فرض (مطابق نمونه‌های مستندات apiv2)
-const NOBITEX_BASE_URL = process.env.NOBITEX_BASE_URL || DEFAULT_BASE;
-const USER_AGENT = process.env.USER_AGENT || 'Nobitex-RadarBot/1.0';
-const API_TOKEN = process.env.NOBITEX_TOKEN || null;
-const DEFAULT_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 15000);
+import fetch from "node-fetch";
+import dotenv from "dotenv";
+dotenv.config();
 
-function buildUrl(endpoint = '/market/stats', params = {}) {
-  if (!endpoint) endpoint = '/market/stats';
-  if (!endpoint.startsWith('/')) endpoint = '/' + endpoint;
-  const url = new URL(NOBITEX_BASE_URL + endpoint);
-  Object.keys(params).forEach(key => {
-    const v = params[key];
-    if (v !== undefined && v !== null) url.searchParams.append(key, String(v));
-  });
-  return url.toString();
-}
+const NOBITEX_API_URL = process.env.NOBITEX_API_URL || "https://apiv2.nobitex.ir/market/stats";
 
-async function fetchWithTimeout(url, options = {}, timeout = DEFAULT_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    return res;
-  } finally {
-    clearTimeout(id);
-  }
-}
+/**
+ * تاخیر در اجرای async
+ */
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function fetchNobitexData(endpoint = '/market/stats', params = {}, opts = {}) {
-  try {
-    const url = buildUrl(endpoint, params);
+/**
+ * دریافت داده از Nobitex با مدیریت timeout، retry و خطاهای JSON
+ */
+export async function fetchNobitexData() {
+  const MAX_RETRIES = 3;
+  const TIMEOUT_MS = 15000; // ۱۵ ثانیه
+  const RETRY_DELAY_MS = 5000; // ۵ ثانیه
 
-    const headers = {
-      'User-Agent': USER_AGENT,
-      'Accept': 'application/json',
-      ...(API_TOKEN ? { 'Authorization': `Token ${API_TOKEN}` } : {}),
-    };
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    const fetchOptions = {
-      method: opts.method || 'GET',
-      headers,
-      ...(opts.body ? { body: opts.body } : {}),
-    };
+    try {
+      console.debug(`[DEBUG] Fetching Nobitex API (Attempt ${attempt}/${MAX_RETRIES}): ${NOBITEX_API_URL}`);
+      const response = await fetch(NOBITEX_API_URL, {
+        method: "GET",
+        signal: controller.signal,
+        headers: { "Accept": "application/json" },
+      });
 
-    logger.debug(`🔍 Fetching Nobitex API: ${url}`);
+      clearTimeout(timeout);
 
-    const response = await fetchWithTimeout(url, fetchOptions, opts.timeout || DEFAULT_TIMEOUT_MS);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
 
-    if (!response) {
-      logger.error('🔥 No response received from fetch');
-      return { error: true, code: 0, message: 'No response' };
+      const data = await response.json();
+      if (!data || typeof data !== "object") {
+        throw new Error("Invalid JSON structure");
+      }
+
+      console.debug(`[SUCCESS] Nobitex data received successfully on attempt ${attempt}`);
+      return data;
+
+    } catch (error) {
+      clearTimeout(timeout);
+
+      if (error.name === "AbortError") {
+        console.error(`[ERROR] Fetch attempt ${attempt} timed out after ${TIMEOUT_MS / 1000}s`);
+      } else {
+        console.error(`[ERROR] Fetch attempt ${attempt} failed: ${error.message}`);
+      }
+
+      // تلاش مجدد در صورت امکان
+      if (attempt < MAX_RETRIES) {
+        console.log(`[INFO] Retrying in ${RETRY_DELAY_MS / 1000}s...`);
+        await delay(RETRY_DELAY_MS);
+        continue;
+      }
+
+      // در صورت شکست نهایی
+      console.error(`[FATAL] All ${MAX_RETRIES} fetch attempts failed.`);
+      return {
+        error: true,
+        code: 500,
+        message: "Fetch failed",
+        details: error.message || "Unknown error",
+      };
     }
-
-    if (response.status === 401 || response.status === 403) {
-      logger.error(`❌ Unauthorized/Forbidden (status ${response.status})`);
-      return { error: true, code: response.status, message: 'Forbidden - Check token or access' };
-    }
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      logger.error(`❌ HTTP Error ${response.status} دریافت شد. جواب: ${text}`);
-      return { error: true, code: response.status, message: 'HTTP Request Failed', details: text };
-    }
-
-    const data = await response.json().catch(() => null);
-    if (data === null) {
-      logger.error('❌ Failed to parse JSON from Nobitex response');
-      return { error: true, code: 500, message: 'Invalid JSON' };
-    }
-
-    return { error: false, data };
-  } catch (err) {
-    const message = err.name === 'AbortError' ? 'Request timed out' : err.message;
-    logger.error(`🔥 Fetch failed: ${message}`);
-    return { error: true, code: 500, message: 'Fetch failed', details: message };
   }
 }
