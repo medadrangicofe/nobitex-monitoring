@@ -1,66 +1,84 @@
 // src/services/dataFetcher.js
-import fetch from "node-fetch";
-import logger from "../utils/logger.js";
+import axios from 'axios';
+import logger from '../utils/logger.js';
+
+const API_BASE_URL = process.env.NOBITEX_API_BASE_URL || 'https://api.nobitex.ir';
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 2500;
 
 /**
- * Fetch market stats data from Nobitex API with retry and timeout logic.
+ * تأخیر تطبیقی برای retry درخواست‌های ناموفق
  */
-export async function fetchNobitexData() {
-  const NOBITEX_API_URL = process.env.NOBITEX_API_URL || "https://apiv2.nobitex.ir/market/stats";
-  const RETRY_COUNT = 3;
-  const RETRY_DELAY = 5000; // ms
-  const TIMEOUT = 10000; // ms (10 seconds)
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  for (let attempt = 1; attempt <= RETRY_COUNT; attempt++) {
-    logger.debug(`Fetching Nobitex API (Attempt ${attempt}/${RETRY_COUNT}): ${NOBITEX_API_URL}`);
+/**
+ * ارسال درخواست امن به API نوبیتکس با مدیریت کامل خطا
+ * @param {string} endpoint - مسیر نسبی درخواست (مثلاً /market/stats)
+ * @param {object} params - پارامترهای درخواست
+ * @returns {Promise<object|null>} دادهٔ دریافتی از نوبیتکس یا null در صورت خطا
+ */
+export async function fetchNobitexData(endpoint, params = {}) {
+  const url = `${API_BASE_URL}${endpoint}`;
+  let attempt = 0;
 
+  while (attempt < MAX_RETRIES) {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), TIMEOUT);
+      const response = await axios.get(url, { params, timeout: 10000 });
+      const data = response.data;
 
-      const response = await fetch(NOBITEX_API_URL, {
-        method: "GET",
-        signal: controller.signal,
-        headers: {
-          "Accept": "application/json",
-          "User-Agent": "NobitexMonitor/1.0",
-        },
-      });
-
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid API response structure');
       }
 
-      const data = await response.json();
+      // بررسی فیلدهای کلیدی در پاسخ
+      if (data.status && data.status !== 'ok') {
+        throw new Error(`Nobitex API returned status: ${data.status}`);
+      }
 
-      // Validate Nobitex response structure
-      if (!data || typeof data !== "object" || !data.stats) {
-        logger.error("⚠️ ساختار پاسخ نوبیتکس غیرمنتظره است", JSON.stringify(data));
+      return data;
+    } catch (err) {
+      attempt++;
+      const retrying = attempt < MAX_RETRIES;
+
+      logger.warn(
+        `[fetchNobitexData] Attempt ${attempt} failed for ${endpoint}: ${err.message}`
+      );
+
+      if (!retrying) {
+        logger.error(`[fetchNobitexData] Max retries reached for ${endpoint}`);
         return null;
       }
 
-      logger.success(`Nobitex data received successfully on attempt ${attempt}`);
-      return data.stats;
-
-    } catch (error) {
-      const isLastAttempt = attempt === RETRY_COUNT;
-
-      if (error.name === "AbortError") {
-        logger.error(`⏱️ Timeout after ${TIMEOUT / 1000}s on attempt ${attempt}`);
-      } else {
-        logger.error(`❌ Fetch error on attempt ${attempt}: ${error.message}`);
-      }
-
-      if (!isLastAttempt) {
-        logger.debug(`Retrying in ${RETRY_DELAY / 1000}s...`);
-        await new Promise((r) => setTimeout(r, RETRY_DELAY));
-      } else {
-        logger.error("🚨 All Nobitex API fetch attempts failed.");
-      }
+      await delay(RETRY_DELAY_MS * attempt);
     }
   }
 
   return null;
+}
+
+/**
+ * نمونهٔ خاص برای دریافت آمار بازار
+ */
+export async function fetchMarketStats() {
+  const data = await fetchNobitexData('/market/stats');
+  if (!data?.stats) {
+    logger.error('[fetchMarketStats] Missing stats field in response');
+    return null;
+  }
+  return data.stats;
+}
+
+/**
+ * نمونهٔ خاص برای دریافت آخرین قیمت‌های تتر و بیت‌کوین
+ */
+export async function fetchTickerSymbols(symbols = ['USDT-IRT', 'BTC-IRT']) {
+  const joinedSymbols = symbols.join(',');
+  const data = await fetchNobitexData('/market/tickers', { symbols: joinedSymbols });
+
+  if (!data?.ticks) {
+    logger.error('[fetchTickerSymbols] Missing ticks field in response');
+    return null;
+  }
+
+  return data.ticks;
 }
