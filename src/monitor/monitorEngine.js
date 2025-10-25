@@ -123,3 +123,19 @@ export function getMonitorStatus() {
     interval: MONITOR_INTERVAL_MS,
   };
 }
+
+/**
+ * سازگاری با index.js برای Render
+ * (رفع خطای: monitorEngine.js does not provide an export named 'monitorEngineStart')
+ */
+export function monitorEngineStart() {
+  startMonitoring();
+}
+
+// در صورت نیاز برای import پیش‌فرض در ماژول‌های قدیمی
+export default {
+  startMonitoring,
+  stopMonitoring,
+  getMonitorStatus,
+  monitorEngineStart,
+};
