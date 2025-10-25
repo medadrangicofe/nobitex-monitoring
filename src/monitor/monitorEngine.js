@@ -1,4 +1,10 @@
 // src/monitor/monitorEngine.js
+// -------------------------------------------------------------
+// Stable version (2025-10)
+// Monitors Nobitex market, detects significant changes,
+// determines short-term trend, and sends Telegram alerts.
+// -------------------------------------------------------------
+
 import { fetchMarketStats, fetchTickerSymbols } from '../services/dataFetcher.js';
 import { sendMonitorAlertTelegram } from '../services/monitorTelegram.js';
 import logger from '../utils/logger.js';
@@ -8,11 +14,11 @@ let trendCache = {};
 let isMonitoringActive = false;
 let monitorInterval = null;
 
-// تنظیم زمان‌بندی نظارت (پیش‌فرض: هر 30 ثانیه)
+// تنظیم بازه زمانی مانیتورینگ (پیش‌فرض: هر 30 ثانیه)
 const MONITOR_INTERVAL_MS = Number(process.env.NOBITEX_MONITOR_INTERVAL_MS) || 30000;
 
 /**
- * مقایسه‌ی داده‌ها برای تشخیص تغییرات قابل‌توجه
+ * بررسی تغییر قابل‌توجه در قیمت برای ارسال هشدار
  */
 function hasSignificantChange(symbol, currentPrice) {
   const last = lastSignals[symbol];
@@ -31,7 +37,7 @@ function hasSignificantChange(symbol, currentPrice) {
 }
 
 /**
- * محاسبه‌ی روند بازار بر اساس تغییرات اخیر
+ * تشخیص روند بازار بر اساس آخرین تغییرات
  */
 function determineTrend(symbol, current, previous) {
   if (!previous) return 'unknown';
@@ -41,7 +47,7 @@ function determineTrend(symbol, current, previous) {
 }
 
 /**
- * دریافت و پردازش داده‌ها برای مانیتورینگ بازار
+ * واکشی داده‌ها و پردازش آن‌ها جهت مانیتورینگ بازار نوبیتکس
  */
 async function processMarketData() {
   try {
@@ -65,22 +71,23 @@ async function processMarketData() {
 
       if (hasSignificantChange(symbol, currentPrice)) {
         const changePercent = ((currentPrice - lastPrice) / lastPrice) * 100;
-        const message = `📈 تغییر قابل توجه در ${symbol}\n` +
-                        `قیمت فعلی: ${currentPrice.toLocaleString('fa-IR')} ریال\n` +
-                        `تغییر: ${changePercent.toFixed(2)}٪ (${trend === 'up' ? '🔺 صعودی' : '🔻 نزولی'})`;
+        const message =
+          `📈 تغییر قابل توجه در ${symbol}\n` +
+          `قیمت فعلی: ${currentPrice.toLocaleString('fa-IR')} ریال\n` +
+          `تغییر: ${changePercent.toFixed(2)}٪ ` +
+          `(${trend === 'up' ? '🔺 صعودی' : '🔻 نزولی'})`;
 
         await sendMonitorAlertTelegram(message);
         logger.info(`[monitorEngine] Alert sent for ${symbol}: ${changePercent.toFixed(2)}%`);
       }
     }
-
   } catch (err) {
     logger.error(`[monitorEngine] Error in processMarketData: ${err.message}`);
   }
 }
 
 /**
- * شروع مانیتورینگ نوبیتکس
+ * شروع فرآیند مانیتورینگ نوبیتکس
  */
 export function startMonitoring() {
   if (isMonitoringActive) {
@@ -98,7 +105,7 @@ export function startMonitoring() {
 }
 
 /**
- * توقف مانیتورینگ نوبیتکس
+ * توقف فرآیند مانیتورینگ
  */
 export function stopMonitoring() {
   if (!isMonitoringActive) {
@@ -113,7 +120,7 @@ export function stopMonitoring() {
 }
 
 /**
- * بررسی وضعیت فعلی مانیتورینگ
+ * گزارش وضعیت فعلی مانیتورینگ (برای API یا Render)
  */
 export function getMonitorStatus() {
   return {
@@ -125,8 +132,8 @@ export function getMonitorStatus() {
 }
 
 /**
- * سازگاری با index.js برای Render
- * (رفع خطای: monitorEngine.js does not provide an export named 'monitorEngineStart')
+ * سازگاری با index.js برای Render و import جدید
+ * (رفع خطای: "monitorEngine.js does not provide an export named 'monitorEngineStart'")
  */
 export function monitorEngineStart() {
   startMonitoring();
