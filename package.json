@@ -8,7 +8,7 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "render:start": "node src/index.js",
-    "postinstall": ""
+    "lint": "eslint . --ext .js"
   },
   "dependencies": {
     "axios": "^1.7.2",
@@ -19,9 +19,20 @@
     "winston": "^3.11.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.3"
+    "nodemon": "^3.0.3",
+    "eslint": "^9.11.1"
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "keywords": [
+    "nobitex",
+    "crypto",
+    "monitoring",
+    "alerts",
+    "trading",
+    "socket.io"
+  ],
+  "author": "Medad Rangi",
+  "license": "MIT"
 }
