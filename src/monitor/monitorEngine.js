@@ -66,7 +66,6 @@ async function processMarketData() {
       const lastPrice = lastSignals[symbol] || currentPrice;
       const trend = determineTrend(symbol, currentPrice, lastPrice);
 
-      // ذخیره‌ی روند فعلی برای دفعات بعدی
       trendCache[symbol] = trend;
 
       if (hasSignificantChange(symbol, currentPrice)) {
@@ -133,13 +132,12 @@ export function getMonitorStatus() {
 
 /**
  * سازگاری با index.js برای Render و import جدید
- * (رفع خطای: "monitorEngine.js does not provide an export named 'monitorEngineStart'")
  */
 export function monitorEngineStart() {
   startMonitoring();
 }
 
-// در صورت نیاز برای import پیش‌فرض در ماژول‌های قدیمی
+// برای import پیش‌فرض در ماژول‌های قدیمی
 export default {
   startMonitoring,
   stopMonitoring,
